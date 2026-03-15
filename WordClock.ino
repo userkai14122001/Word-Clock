@@ -49,12 +49,53 @@ int lastMinute = -1;
 Adafruit_NeoPixel strip(LED_PIXEL_AMOUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 
+#include <time.h>
+
+String inputString = "";
+
+void setTimeFromString(String datetime) {
+  int year, month, day, hour, minute, second;
+
+  sscanf(datetime.c_str(), "%d-%d-%d %d:%d:%d",
+         &year, &month, &day, &hour, &minute, &second);
+
+  struct tm t;
+  t.tm_year = year - 1900;
+  t.tm_mon  = month - 1;
+  t.tm_mday = day;
+  t.tm_hour = hour;
+  t.tm_min  = minute;
+  t.tm_sec  = second;
+
+  time_t newTime = mktime(&t);
+  struct timeval now = { .tv_sec = newTime };
+  settimeofday(&now, NULL);
+
+  Serial.println("Zeit gesetzt!");
+}
+
+void checkSerial() {
+  if (Serial.available()) {
+
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+
+    if (cmd.startsWith("settime ")) {
+
+      String datetime = cmd.substring(8);
+      setTimeFromString(datetime);
+
+    }
+  }
+}
 // ---------------------------------------------------------
 // SETUP
 // ---------------------------------------------------------
 void setup() {
     delay(2000);
     Serial.begin(115200);
+    Serial.println("Serial Commands:");
+    Serial.println("Befehl: settime YYYY-MM-DD HH:MM:SS");
     Serial.println();
     Serial.println("=== BOOT START ===");
 
@@ -80,7 +121,10 @@ void setup() {
 // LOOP
 // ---------------------------------------------------------
 void loop() {
+    
+    // debugWords();
 
+    checkSerial();
     if (setupMode) {
         handleSetupWeb();
         showAttentionAnimation(0x0000FF);
