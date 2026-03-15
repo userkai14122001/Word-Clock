@@ -45,9 +45,10 @@ void performWifiScan() {
     DynamicJsonDocument doc(2048);
     JsonArray arr = doc.to<JsonArray>();
 
+    Serial.println("Gefundene Netzwerke");
     for (int i = 0; i < n; i++) {
         arr.add(WiFi.SSID(i));
-        Serial.println(WiFi.SSID(i));
+        Serial.print(WiFi.SSID(i) + ", ");
     }
     
     String json;
@@ -118,11 +119,15 @@ void setupWebRoutes() {
         if (server.hasArg("mqtt_pass"))
             prefs.putString("mqtt_pass", server.arg("mqtt_pass"));
 
+        Serial.println("Wifi ssid: " + prefs.getString("wifi_ssid"));
+        Serial.println("Wifi pass: " + prefs.getString("wifi_pass"));
+        Serial.println("MQTT host: " + prefs.getString("mqtt_host"));
+        Serial.println("MQTT User: " + prefs.getString("mqtt_user"));
+        Serial.println("MQTT Pass: " + prefs.getString("mqtt_pass"));
         prefs.end();
 
         server.send(200, "text/html", pageReboot());
-        delay(300);
-        ESP.restart();
+
     });
 
     // -----------------------------------------------------
@@ -174,7 +179,7 @@ void startSetupMode() {
 
     dnsServer.start(53, "*", apIP);
 
-    performWifiScan();   // ⭐ Sofortiger Scan für schnelle /wifi-Seite
+    performWifiScan();
 
     setupWebRoutes();
     server.begin();
