@@ -174,7 +174,7 @@ static void showExtraMinutes(int minute) {
     uint8_t b = ( color        & 0xFF) * brightness / 255;
 
     for (int i = 0; i < extra; i++) {
-        strip.setPixelColor(106 + i, strip.Color(r, g, b));
+        strip.setPixelColor(106 + i, strip.Color(r, b, g));
     }
 }
 
