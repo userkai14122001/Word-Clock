@@ -7,8 +7,7 @@
 #include <DNSServer.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
-#include <PubSubClient.h>   // ⭐ WICHTIG: hinzufügen!
-
+#include <PubSubClient.h>
 // Funktionen aus wifi_manager.cpp
 void setupWebRoutes();
 void startSetupMode();
