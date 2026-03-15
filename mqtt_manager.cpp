@@ -172,4 +172,3 @@ void mqttLoop() {
 
     mqtt.loop();
 }
-
