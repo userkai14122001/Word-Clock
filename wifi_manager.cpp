@@ -1,3 +1,4 @@
+#include "esp_netif_types.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
@@ -7,7 +8,7 @@
 
 #include "wifi_manager.h"
 #include "web_pages.h"
-
+#include "effects.h"
 // Globale Objekte aus WordClock.ino
 extern WebServer server;
 extern DNSServer dnsServer;
@@ -33,30 +34,10 @@ String cachedScanResult = "[]";
 // WLAN-Scan durchführen und Ergebnis cachen
 // ---------------------------------------------------------
 void performWifiScan() {
-    Serial.println("Initialer WLAN-Scan...");
-
-    WiFi.mode(WIFI_AP_STA);
-    WiFi.disconnect();
-    delay(150);
-
-    int n = WiFi.scanNetworks();
-    Serial.printf("SCAN FOUND %d NETWORKS\n", n);
-
-    DynamicJsonDocument doc(2048);
-    JsonArray arr = doc.to<JsonArray>();
-
-    Serial.println("Gefundene Netzwerke");
-    for (int i = 0; i < n; i++) {
-        arr.add(WiFi.SSID(i));
-        Serial.print(WiFi.SSID(i) + ", ");
-    }
-    
-    String json;
-    serializeJson(arr, json);
-    cachedScanResult = json;
+    WiFi.scanDelete();
+    Serial.println("Starte asynchronen WLAN-Scan...");
+    WiFi.scanNetworks(true);   // true = async
 }
-
-
 
 // ---------------------------------------------------------
 // ALLE Webserver-Routen (AP + WLAN)
@@ -83,6 +64,15 @@ void setupWebRoutes() {
         server.send(200, "text/html", pageReboot());
     });
 
+
+    // -----------------------------------------------------
+    // DO REBOOT
+    // -----------------------------------------------------
+    server.on("/do_reboot", HTTP_POST, []() {
+        server.send(200, "text/plain", "Rebooting...");
+        ESP.restart();
+    });
+
     // -----------------------------------------------------
     // WLAN-Scan (liefert gecachten Scan)
     // -----------------------------------------------------
@@ -93,8 +83,9 @@ void setupWebRoutes() {
     // Optional: Live-Scan
     server.on("/scan_live", []() {
         performWifiScan();
-        server.send(200, "application/json", cachedScanResult);
+        server.send(200, "text/plain", "scan_started");
     });
+
 
     // -----------------------------------------------------
     // Einstellungen speichern
@@ -102,33 +93,40 @@ void setupWebRoutes() {
     server.on("/save", HTTP_POST, []() {
         Serial.println("Save");
 
-        prefs.begin("config", false);
+        // WLAN speichern
+        prefs.begin("wifi", false);
 
         if (server.hasArg("ssid"))
-            prefs.putString("wifi_ssid", server.arg("ssid"));
+            prefs.putString("ssid", server.arg("ssid"));
 
         if (server.hasArg("wifipass"))
-            prefs.putString("wifi_pass", server.arg("wifipass"));
+            prefs.putString("pass", server.arg("wifipass"));
+
+        Serial.println("Wifi ssid: " + prefs.getString("ssid"));
+        Serial.println("Wifi pass: " + prefs.getString("pass"));
+        prefs.end();
+
+
+        // MQTT separat speichern
+        prefs.begin("mqtt", false);
 
         if (server.hasArg("mqtt_host"))
-            prefs.putString("mqtt_host", server.arg("mqtt_host"));
+            prefs.putString("host", server.arg("mqtt_host"));
 
         if (server.hasArg("mqtt_user"))
-            prefs.putString("mqtt_user", server.arg("mqtt_user"));
+            prefs.putString("user", server.arg("mqtt_user"));
 
         if (server.hasArg("mqtt_pass"))
-            prefs.putString("mqtt_pass", server.arg("mqtt_pass"));
+            prefs.putString("pass", server.arg("mqtt_pass"));
 
-        Serial.println("Wifi ssid: " + prefs.getString("wifi_ssid"));
-        Serial.println("Wifi pass: " + prefs.getString("wifi_pass"));
-        Serial.println("MQTT host: " + prefs.getString("mqtt_host"));
-        Serial.println("MQTT User: " + prefs.getString("mqtt_user"));
-        Serial.println("MQTT Pass: " + prefs.getString("mqtt_pass"));
+        Serial.println("MQTT host: " + prefs.getString("host"));
+        Serial.println("MQTT User: " + prefs.getString("user"));
+        Serial.println("MQTT Pass: " + prefs.getString("pass"));
         prefs.end();
 
         server.send(200, "text/html", pageReboot());
-
     });
+
 
     // -----------------------------------------------------
     // Factory Reset
@@ -192,50 +190,63 @@ void startSetupMode() {
 // WLAN verbinden oder Setup starten
 // ---------------------------------------------------------
 void tryConnectWiFi() {
-    prefs.begin("config", true);
-    wifi_ssid   = prefs.getString("wifi_ssid", "");
-    wifi_pass   = prefs.getString("wifi_pass", "");
-    mqtt_server = prefs.getString("mqtt_host", "");
-    mqtt_user   = prefs.getString("mqtt_user", "");
-    mqtt_pass   = prefs.getString("mqtt_pass", "");
+    // WLAN-Konfig aus NVS lesen
+    prefs.begin("wifi", true);
+    wifi_ssid = prefs.getString("ssid", "");
+    wifi_pass = prefs.getString("pass", "");
     prefs.end();
 
+    // Keine SSID gespeichert → direkt Setup-Mode
     if (wifi_ssid == "") {
-        Serial.println("Keine WLAN-Daten → Setup-Modus");
         startSetupMode();
         return;
     }
 
-    Serial.println("Verbinde mit WLAN: " + wifi_ssid);
+    // Sofort Setup-Mode starten (AP + DNS + Webserver)
+    startSetupMode();   // AP ist jetzt aktiv, Captive Portal läuft
 
-    WiFi.mode(WIFI_STA);
+    // Parallel dazu WLAN-Client versuchen
+    Serial.println("Versuche WLAN-Verbindung mit gespeicherten Daten...");
+    WiFi.mode(WIFI_AP_STA);
     WiFi.begin(wifi_ssid.c_str(), wifi_pass.c_str());
 
     unsigned long startAttempt = millis();
-    while (WiFi.status() != WL_CONNECTED &&
-           millis() - startAttempt < 15000) {
-        delay(300);
+    const unsigned long timeout = 15000; // 15 Sekunden
+
+    while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < timeout) {
+        // WLAN-Animation
+        if (wifi_ssid == "") {
+            showWifiRingAnimation(0x0000FF);   // z.B. Blau
+        } else {
+            showWifiRingAnimation(0xffff00);   // z.B. Gelb
+        }
+
+        // Captive Portal / Webserver weiter bedienen
+        dnsServer.processNextRequest();
+        server.handleClient();
     }
 
+    // Wenn nach Timeout immer noch kein WLAN → im Setup-Mode bleiben
     if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("WLAN fehlgeschlagen → Setup-Modus");
-
-        WiFi.disconnect(true, true);
-        delay(200);
-        WiFi.mode(WIFI_OFF);
-        delay(200);
-
-        startSetupMode();
+        Serial.println("WLAN fehlgeschlagen → bleibe im Setup-Mode (AP aktiv)");
+        setupMode = true;
         return;
     }
 
+    // WLAN erfolgreich
     Serial.println("WLAN verbunden: " + WiFi.localIP().toString());
     setupMode = false;
 
+    // AP wieder abschalten, nur noch STA
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_STA);
+
+    // Webrouten für normalen Betrieb (falls getrennt nötig)
     setupWebRoutes();
     server.begin();
     Serial.println("Webserver im WLAN gestartet");
 }
+
 
 
 
@@ -247,8 +258,28 @@ void handleSetupWeb() {
 
     dnsServer.processNextRequest();
     server.handleClient();
+    
+    // Asynchronen WLAN-Scan prüfen
+    int n = WiFi.scanComplete();
+    if (n >= 0) {
+        Serial.printf("SCAN FOUND %d NETWORKS\n", n);
+
+        DynamicJsonDocument doc(2048);
+        JsonArray arr = doc.to<JsonArray>();
+
+        for (int i = 0; i < n; i++) {
+            arr.add(WiFi.SSID(i));
+        }
+
+        String json;
+        serializeJson(arr, json);
+        cachedScanResult = json;
+
+        WiFi.scanDelete();   // Speicher freigeben
+    }
 
     if (millis() - setupStartTime > 5UL * 60UL * 1000UL) {
         ESP.restart();
     }
 }
+
