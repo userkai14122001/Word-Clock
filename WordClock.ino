@@ -39,7 +39,7 @@ String state_topic   = "wordclock/state";
 
 // WordClock Variablen
 bool powerState      = true;
-String currentEffect = "fire2d";
+String currentEffect = "clock";
 uint32_t color       = 0xFF7800;
 uint8_t brightness   = 120;
 
