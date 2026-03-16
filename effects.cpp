@@ -1,65 +1,207 @@
 #include "effects.h"
 
-// Heatmap für Fire2D
+// ---------------------------------------------------------
+// WORD STRUCT
+// ---------------------------------------------------------
+struct Word {
+    int x;
+    int y;
+    int len;
+};
+
+// ---------------------------------------------------------
+// WORD DEFINITIONS (aus deinem bisherigen Code extrahiert)
+// ---------------------------------------------------------
+
+// Grundwörter   x   y len
+Word W_ES      = {0, 0, 2};
+Word W_IST     = {3, 0, 3};
+Word W_FUENF   = {7, 0, 4};
+Word W_ZEHN    = {0, 1, 4};
+Word W_ZWANZIG = {4, 1, 7};
+Word W_VIERTEL = {4, 2, 7};
+Word W_VOR     = {0, 3, 3};
+Word W_NACH    = {7, 3, 4};
+Word W_HALB    = {0, 4, 4};
+
+// Stundenwörter
+Word H_ZWOELF  = {5, 8, 5};
+Word H_EINS    = {0, 9, 4};
+Word H_EIN     = {0, 9, 3};
+Word H_ZWEI    = {7, 7, 4};
+Word H_DREI    = {0, 5, 4};
+Word H_VIER    = {7, 5, 4};
+Word H_FUENF_H = {7, 4, 4};
+Word H_SECHS   = {0, 6, 5};
+Word H_SIEBEN  = {5, 6, 6};
+Word H_ACHT    = {1, 8, 4};
+Word H_NEUN    = {3, 7, 4};
+Word H_ZEHN_H  = {0, 7, 4};   // <- bitte später korrigieren
+Word H_ELF     = {5, 4, 3};
+
+// UHR (Platzhalter)
+Word W_UHR     = {8, 9, 3};   // <- bitte später korrigieren
+
+// Extraminuten
+Word M1 = {7, 9, 1};   // Minute 1
+Word M2 = {8, 9, 1};   // Minute 2
+Word M3 = {9, 9, 1};   // Minute 3
+Word M4 = {10, 9, 1};   // Minute 4
+
+
+uint32_t makeColor(uint8_t r, uint8_t g, uint8_t b) {
+    // globale Helligkeit
+    r = (r * brightness) / 255;
+    g = (g * brightness) / 255;
+    b = (b * brightness) / 255;
+
+    // GRB + Gamma
+    return strip.gamma32(strip.Color(r, g, b));
+}
+
+
+// ---------------------------------------------------------
+// DRAW WORD
+// ---------------------------------------------------------
+void drawWord(const Word& w) {
+    for (int i = 0; i < w.len; i++) {
+        setPixelXY(w.x + i, w.y);
+    }
+}
+
+// ---------------------------------------------------------
+// FIRE2D HEATMAP
+// ---------------------------------------------------------
 uint8_t heat2D[HEIGHT][WIDTH];
 
-// -------------------------------
-// ATTENTUION
-// -------------------------------
-void showAttentionAnimation(uint32_t col) {
-    static uint16_t phase = 0;
-    phase++;
+// ---------------------------------------------------------
+// Startup
+// ---------------------------------------------------------
+void showStartupWave(uint32_t col) {
+    const float cx = (WIDTH  - 1) / 2.0f;
+    const float cy = (HEIGHT - 1) / 2.0f;
+    const float maxDist = sqrt(cx*cx + cy*cy);
+
+    float radius = 0.0f;
+
+    while (radius <= maxDist + 3) {
+
+        clearMatrix();
+
+        for (int y = 0; y < HEIGHT; y++) {
+            for (int x = 0; x < WIDTH; x++) {
+
+                float dx = x - cx;
+                float dy = y - cy;
+                float dist = sqrt(dx*dx + dy*dy);
+
+                float diff = fabs(dist - radius);
+
+                const float waveWidth = 3.0f; // weich & smooth
+
+                if (diff < waveWidth) {
+                    float fade = 1.0f - (diff / waveWidth);
+
+                    uint8_t r = ((col >> 16) & 0xFF) * fade;
+                    uint8_t g = ((col >> 8)  & 0xFF) * fade;
+                    uint8_t b = ( col        & 0xFF) * fade;
+
+                    strip.setPixelColor(XY(x, y), strip.Color(r, g, b));
+                }
+            }
+        }
+
+        strip.show();
+
+        radius += 0.17f;   // Geschwindigkeit (kleiner = langsamer)
+        delay(70);         // Frame‑Rate (größer = langsamer)
+    }
+}
+
+void showWifiRingAnimation(uint32_t col) {
+    static int headPos = 0;
+    static unsigned long lastFrame = 0;
+
+    const int frameDelay = 60; // smooth speed
+    if (millis() - lastFrame < frameDelay) return;
+    lastFrame = millis();
 
     clearMatrix();
 
-    // Langsamer Puls (phase * Geschwindigkeit)
-    float pulse = (sin(phase * 0.01) * 0.5f + 0.5f);
+    const int trail = 18;
+    const int total = (WIDTH * 2 + HEIGHT * 2) - 4;
 
-    // Dunkler machen (max 10% Helligkeit)
-    pulse *= 0.9f;
+    // Farbe dimmen + brightness berücksichtigen
+    auto dimColor = [&](uint32_t c, float f) {
+        uint8_t r = ((c >> 16) & 0xFF) * f;
+        uint8_t g = ((c >> 8)  & 0xFF) * f;
+        uint8_t b = ( c        & 0xFF) * f;
 
-    uint8_t r = ((col >> 16) & 0xFF) * pulse;
-    uint8_t g = ((col >> 8)  & 0xFF) * pulse;
-    uint8_t b = ( col        & 0xFF) * pulse;
+        // brightness anwenden
+        r = (r * brightness) / 255;
+        g = (g * brightness) / 255;
+        b = (b * brightness) / 255;
 
-    uint32_t c = strip.Color(r, g, b);
+        // gamma anwenden
+        return strip.gamma32(strip.Color(r, g, b));
+    };
 
-    // Oberer Rand
-    for (int x = 0; x < WIDTH; x++)
-        strip.setPixelColor(XY(x, 0), c);
+    // Pixel am Ring setzen
+    auto setRingPixel = [&](int index, uint32_t c) {
+        int count = 0;
 
-    // Unterer Rand
-    for (int x = 0; x < WIDTH; x++)
-        strip.setPixelColor(XY(x, HEIGHT - 1), c);
+        for (int x = 0; x < WIDTH; x++) {
+            if (count == index) { strip.setPixelColor(XY(x, 0), c); return; }
+            count++;
+        }
+        for (int y = 1; y < HEIGHT; y++) {
+            if (count == index) { strip.setPixelColor(XY(WIDTH - 1, y), c); return; }
+            count++;
+        }
+        for (int x = WIDTH - 2; x >= 0; x--) {
+            if (count == index) { strip.setPixelColor(XY(x, HEIGHT - 1), c); return; }
+            count++;
+        }
+        for (int y = HEIGHT - 2; y > 0; y--) {
+            if (count == index) { strip.setPixelColor(XY(0, y), c); return; }
+            count++;
+        }
+    };
 
-    // Linker Rand
-    for (int y = 0; y < HEIGHT; y++)
-        strip.setPixelColor(XY(0, y), c);
+    // Trail zeichnen
+    for (int i = 0; i < trail; i++) {
+        int pos = (headPos - i + total) % total;
+        float fade = 1.0f - (float)i / trail;
+        uint32_t c = dimColor(col, fade);
+        setRingPixel(pos, c);
+    }
 
-    // Rechter Rand
-    for (int y = 0; y < HEIGHT; y++)
-        strip.setPixelColor(XY(WIDTH - 1, y), c);
+    headPos = (headPos + 1) % total;
 
     strip.show();
 }
 
-// -------------------------------
+
+
+
+
+
+// ---------------------------------------------------------
 // LOVE YOU
-// -------------------------------
+// ---------------------------------------------------------
 void showLoveYou() {
     clearMatrix();
-    // Einfaches Herz / LOVE-Muster
     for (int i = 3; i < 7; i++) setPixelXY(i, 3);
     for (int i = 4; i < 7; i++) setPixelXY(i, 5);
     strip.show();
 }
 
-// -------------------------------
+// ---------------------------------------------------------
 // COLORLOOP
-// -------------------------------
+// ---------------------------------------------------------
 void showColorloop() {
     static uint16_t baseHue = 0;
-    baseHue += 15;
+    baseHue += 3;
 
     for (int i = 0; i < LED_PIXEL_AMOUNT; i++) {
         uint16_t pixelHue = baseHue + (i * 300);
@@ -69,15 +211,15 @@ void showColorloop() {
         uint8_t g = ((c >> 8)  & 0xFF) * brightness / 255;
         uint8_t b = ( c        & 0xFF) * brightness / 255;
 
-        strip.setPixelColor(i, strip.Color(r, g, b));
+        strip.setPixelColor(i, makeColor(r, g, b));    
     }
 
     strip.show();
 }
 
-// -------------------------------
+// ---------------------------------------------------------
 // COLORWIPE
-// -------------------------------
+// ---------------------------------------------------------
 void showColorwipe() {
     static int pos = 0;
     static uint16_t hue = 0;
@@ -89,142 +231,179 @@ void showColorwipe() {
     uint8_t g = ((c >> 8)  & 0xFF) * brightness / 255;
     uint8_t b = ( c        & 0xFF) * brightness / 255;
 
-    strip.setPixelColor(pos, strip.Color(r, g, b));
+    strip.setPixelColor(pos, makeColor(r, g, b));
+
     strip.show();
 
     pos++;
     if (pos >= LED_PIXEL_AMOUNT) pos = 0;
 }
 
-// -------------------------------
+// ---------------------------------------------------------
 // FIRE 2D
-// -------------------------------
+// ---------------------------------------------------------
 void showFire2D() {
+    static unsigned long lastFrame = 0;
+    const int frameDelay = 35;
+    if (millis() - lastFrame < frameDelay) return;
+    lastFrame = millis();
 
-    // 1. Abkühlen
-    for (int y = 0; y < HEIGHT; y++) {
-        for (int x = 0; x < WIDTH; x++) {
-            int cooldown = random(0, 4);
-            heat2D[y][x] = (heat2D[y][x] > cooldown) ? heat2D[y][x] - cooldown : 0;
-        }
-    }
-
-    // 2. Funken unten
+    // 1) Unterste Zeile warm anheizen (nicht zu hell)
     for (int x = 0; x < WIDTH; x++) {
-        if (random(0, 4) == 0) {
-            int add = random(120, 255);
-            int sum = heat2D[HEIGHT - 1][x] + add;
-            heat2D[HEIGHT - 1][x] = (sum > 255) ? 255 : sum;
-        }
+        heat2D[HEIGHT - 1][x] = random(120, 200);
     }
 
-    // 3. Hitze steigt nach oben
+    // 2) Hitze nach oben ziehen + verwirbeln
     for (int y = 0; y < HEIGHT - 1; y++) {
         for (int x = 0; x < WIDTH; x++) {
-            int below = heat2D[y + 1][x];
-            if (x > 0) below += heat2D[y + 1][x - 1];
-            if (x < WIDTH - 1) below += heat2D[y + 1][x + 1];
-            heat2D[y][x] = below / 3;
+
+            int below      = heat2D[y + 1][x];
+            int belowLeft  = (x > 0)         ? heat2D[y + 1][x - 1] : below;
+            int belowRight = (x < WIDTH - 1) ? heat2D[y + 1][x + 1] : below;
+
+            int avg = (below + belowLeft + belowRight) / 3;
+
+            // leichte Abkühlung
+            avg -= random(0, 10);
+            if (avg < 0) avg = 0;
+
+            heat2D[y][x] = avg;
         }
     }
 
-    // 4. Heat → Farbe
+    // 3) Funken erzeugen (selten, hell, steigen nach oben)
+    if (random(0, 6) == 0) {  // Wahrscheinlichkeit
+        int sx = random(0, WIDTH);
+        int sy = HEIGHT - 2;
+        heat2D[sy][sx] = 255;  // heller Funke
+    }
+
+    // Funken nach oben bewegen
+    for (int y = 1; y < HEIGHT; y++) {
+        for (int x = 0; x < WIDTH; x++) {
+            if (heat2D[y][x] > 220 && random(0, 3) == 0) {
+                // nach oben wandern
+                heat2D[y - 1][x] = heat2D[y][x];
+                heat2D[y][x] = 0;
+            }
+        }
+    }
+
+    // 4) Heatmap → warme Farben
     for (int y = 0; y < HEIGHT; y++) {
         for (int x = 0; x < WIDTH; x++) {
 
             uint8_t h = heat2D[y][x];
-            float damp = 1.0 - (float)y / (HEIGHT * 1.4);
-            h = h * damp;
+            uint32_t c;
 
-            uint8_t r, g, b;
-
-            if (h > 200) {
-                r = 255;
-                g = 200 + (h - 200) * 0.55;
-                b = 50;
-            } else if (h > 120) {
-                r = 255;
-                g = 100 + (h - 120) * 0.8;
-                b = 0;
-            } else {
-                r = h * 2;
-                g = h * 0.3;
-                b = 0;
+            // warme Palette: Rot → Orange → sanftes Gelb
+            if (h < 80) {
+                c = strip.Color(h * 3, h / 4, 0);  // dunkles Rot
+            }
+            else if (h < 150) {
+                c = strip.Color(255, (h - 80) * 3, 0); // Rot → Orange
+            }
+            else if (h < 220) {
+                c = strip.Color(255, 180 + (h - 150), (h - 150) * 2); // Orange → warmes Gelb
+            }
+            else {
+                c = strip.Color(255, 230, 180); // Funken: warmes Weißgelb
             }
 
+            // Transparenz: oben weniger dicht
+            uint8_t fade = map(y, 0, HEIGHT - 1, 120, 255);
+            uint8_t r = ((c >> 16) & 0xFF) * fade / 255;
+            uint8_t g = ((c >> 8)  & 0xFF) * fade / 255;
+            uint8_t b = ( c        & 0xFF) * fade / 255;
+
+            // globale Helligkeit + Gamma
             r = (r * brightness) / 255;
             g = (g * brightness) / 255;
+            b = (b * brightness) / 255;
 
-            int px = WIDTH - 1 - x;
-            strip.setPixelColor(XY(px, y), strip.Color(g, r, b));
+            strip.setPixelColor(XY(x, y), strip.gamma32(strip.Color(g, r, b))   // GRB statt RGB
+);
+
         }
     }
 
     strip.show();
 }
 
-// -------------------------------
+
+
+// ---------------------------------------------------------
 // EXTRA MINUTES
-// -------------------------------
+// ---------------------------------------------------------
 static void showExtraMinutes(int minute) {
     int extra = minute % 5;
 
-    uint8_t r = ((color >> 16) & 0xFF) * brightness / 255;
-    uint8_t g = ((color >> 8)  & 0xFF) * brightness / 255;
-    uint8_t b = ( color        & 0xFF) * brightness / 255;
-
-    for (int i = 0; i < extra; i++) {
-        strip.setPixelColor(106 + i, strip.Color(r, b, g));
-    }
+    if (extra >= 1) drawWord(M1);
+    if (extra >= 2) drawWord(M2);
+    if (extra >= 3) drawWord(M3);
+    if (extra >= 4) drawWord(M4);
 }
 
-// -------------------------------
+
+// ---------------------------------------------------------
 // ZEIT-ANZEIGE
-// -------------------------------
-static void word(int x, int y, int len) {
-    for (int i = 0; i < len; i++) {
-        setPixelXY(x + i, y);
-    }
-}
-
+// ---------------------------------------------------------
 void showTime(int hour, int minute) {
     clearMatrix();
 
-    word(0, 0, 2);
-    word(3, 0, 3);
+    drawWord(W_ES);
+    drawWord(W_IST);
 
     int m = minute / 5;
+    bool fullHour = (m == 0);
 
+    // Minuten
     switch (m) {
-        case 1: word(7, 0, 4); word(7, 3, 4); break;
-        case 2: word(0, 1, 4); word(7, 3, 4); break;
-        case 3: word(4, 2, 7); word(7, 3, 4); break;
-        case 4: word(4, 1, 7); word(7, 3, 4); break;
-        case 5: word(7, 0, 4); word(0, 3, 3); word(0, 4, 4); hour++; break;
-        case 6: word(0, 4, 4); hour++; break;
-        case 7: word(4, 2, 7); word(0, 3, 3); word(0, 4, 4); hour++; break;
-        case 8: word(4, 1, 7); word(0, 3, 3); hour++; break;
-        case 9: word(0, 1, 4); word(0, 3, 3); hour++; break;
-        case 10: word(7, 0, 4); word(0, 3, 3); hour++; break;
+        case 0: break;
+
+        case 1: drawWord(W_FUENF);   drawWord(W_NACH); break;                               // 05
+        case 2: drawWord(W_ZEHN);    drawWord(W_NACH); break;                               // 10
+        case 3: drawWord(W_VIERTEL); drawWord(W_NACH); break;                               // 15
+        case 4: drawWord(W_ZWANZIG); drawWord(W_NACH); break;                               // 20
+
+        case 5: drawWord(W_FUENF);   drawWord(W_VOR);  drawWord(W_HALB); hour++; break;     // 25
+        case 6: drawWord(W_HALB);    hour++; break;                                         // 30
+        case 7: drawWord(W_FUENF);   drawWord(W_NACH); drawWord(W_HALB); hour++; break;     // 35
+
+        case 8: drawWord(W_ZWANZIG); drawWord(W_VOR);  hour++; break;                       // 40
+        case 9: drawWord(W_VIERTEL); drawWord(W_VOR);  hour++; break;                       // 45
+        case 10:drawWord(W_ZEHN);    drawWord(W_VOR);  hour++; break;                       // 50
+        case 11:drawWord(W_FUENF);   drawWord(W_VOR);  hour++; break;                       // 55
     }
 
+
+    // Stunden
     hour = hour % 12;
 
     switch (hour) {
-        case 0:  word(5, 8, 5); break;
-        case 1:  word(0, 9, 4); break;
-        case 2:  word(7, 7, 4); break;
-        case 3:  word(0, 5, 4); break;
-        case 4:  word(7, 5, 4); break;
-        case 5:  word(7, 4, 4); break;
-        case 6:  word(0, 6, 5); break;
-        case 7:  word(5, 6, 6); break;
-        case 8:  word(1, 8, 4); break;
-        case 9:  word(0, 7, 4); break;
-        case 10: word(0, 7, 4); break;
-        case 11: word(5, 4, 3); break;
+        case 0:  drawWord(H_ZWOELF); break;
+        case 1:  fullHour ? drawWord(H_EIN) : drawWord(H_EINS); break;
+        case 2:  drawWord(H_ZWEI); break;
+        case 3:  drawWord(H_DREI); break;
+        case 4:  drawWord(H_VIER); break;
+        case 5:  drawWord(H_FUENF_H); break;
+        case 6:  drawWord(H_SECHS); break;
+        case 7:  drawWord(H_SIEBEN); break;
+        case 8:  drawWord(H_ACHT); break;
+        case 9:  drawWord(H_NEUN); break;
+        case 10: drawWord(H_ZEHN_H); break;
+        case 11: drawWord(H_ELF); break;
+    }
+
+    if (fullHour) {
+        drawWord(W_UHR);
     }
 
     showExtraMinutes(minute);
     strip.show();
+}
+
+void testTime(int hour, int minute) {
+    Serial.printf("Testzeit gesetzt: %02d:%02d\n", hour, minute);
+    showTime(hour, minute);
 }
