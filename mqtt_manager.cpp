@@ -18,6 +18,22 @@ extern String currentEffect;
 extern uint32_t color;
 extern uint8_t brightness;
 
+void loadMQTTConfig() {
+    prefs.begin("mqtt", true);
+
+    mqtt_server = prefs.getString("host", "");
+    mqtt_user   = prefs.getString("user", "");
+    mqtt_pass   = prefs.getString("pass", "");
+
+    prefs.end();
+
+    Serial.println("MQTT geladen:");
+    Serial.println("Host: " + mqtt_server);
+    Serial.println("User: " + mqtt_user);
+    Serial.println("Pass: " + mqtt_pass);
+}
+
+
 static void mqttCallback(char* topic, byte* payload, unsigned int length) {
     String msg;
     for (unsigned int i = 0; i < length; i++) {
@@ -149,6 +165,7 @@ void mqttReconnect() {
 
 
 void initMQTT() {
+    loadMQTTConfig();
     if (mqtt_server.length() == 0) {
         Serial.println("MQTT deaktiviert (kein Server eingetragen)");
         return;
@@ -166,7 +183,6 @@ void mqttLoop() {
     }
 
     if (!mqtt.connected()) {
-        showAttentionAnimation(0xFFFF00);
         mqttReconnect();
     }
 
