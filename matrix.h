@@ -1,11 +1,10 @@
-#ifndef MATRIX_H
-#define MATRIX_H
+#pragma once
 
 #include <Arduino.h>
-#include "config.h"
+#include <Adafruit_NeoPixel.h>
 
-int XY(int x, int y);
+extern Adafruit_NeoPixel strip;
+
+uint16_t XY(int x, int y);
 void setPixelXY(int x, int y);
 void clearMatrix();
-
-#endif
