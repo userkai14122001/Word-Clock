@@ -39,7 +39,7 @@ String state_topic   = "wordclock/state";
 
 // WordClock Variablen
 bool powerState      = true;
-String currentEffect = "clock";
+String currentEffect = "fire2d";
 uint32_t color       = 0xFF7800;
 uint8_t brightness   = 120;
 
@@ -53,13 +53,23 @@ Adafruit_NeoPixel strip(LED_PIXEL_AMOUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 // SETUP
 // ---------------------------------------------------------
 void setup() {
-    delay(2000);
+    delay(500);
     Serial.begin(115200);
+    delay(5000);
     Serial.println();
     Serial.println("=== BOOT START ===");
-
+    Serial.println("==================");
+    Serial.println("Serial commands:");
+    Serial.println("creds - - - - - - -  Ausgabe Credentials");
+    Serial.println("reboot  - - - - - -  Neustart ");
+    Serial.println("time **:**  - - - -  Setzte Zeit");
+    Serial.println("debug layout- - - -  Zeigt Zeit in 5m Schritten");
+    Serial.println("");
+    Serial.println("==================");
     strip.begin();
     strip.show();
+    showStartupWave(0x0090FF);
+
 
     tryConnectWiFi();
 
@@ -79,10 +89,11 @@ void setup() {
 // LOOP
 // ---------------------------------------------------------
 void loop() {
+    handleSerialCommands();
 
     if (setupMode) {
         handleSetupWeb();
-        showAttentionAnimation(0x0000FF);
+        showWifiRingAnimation(0x00A0FF);
         return;
     }
 
@@ -127,4 +138,87 @@ void loop() {
         lastMinute = minute;
         publishState();
     }
+}
+
+void runFullTimeTest() {
+    Serial.println("Starte kompletten WordClock-Testlauf...");
+
+    for (int hour = 0; hour < 12; hour += 1) {
+
+        Serial.printf("Test: %02d:%02d\n", hour, 0);
+
+        showTime(hour, 0);
+        strip.show();
+
+        delay(250); // 4 Sekunden pro Anzeige
+    }
+
+    for (int minute = 0; minute < 60; minute += 1) {
+
+        Serial.printf("Test: %02d:%02d\n", 5, minute);
+
+        showTime(5, minute);
+        strip.show();
+
+        delay(500); // 4 Sekunden pro Anzeige
+    }
+
+
+    Serial.println("WordClock-Testlauf abgeschlossen.");
+}
+
+void handleSerialCommands() {
+    if (!Serial.available()) return;
+
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+
+    // --- REBOOT ---
+    if (cmd == "reboot") {
+        Serial.println("Starte neu...");
+        delay(200);
+        ESP.restart();
+        return;
+    }
+
+    // --- CREDENTIALS ---
+    if (cmd == "creds") {
+        Serial.println("===== WLAN Credentials =====");
+        Serial.print("SSID: ");
+        Serial.println(WiFi.SSID());
+        Serial.print("Passwort: ");
+        Serial.println(WiFi.psk());
+        Serial.print("IP: ");
+        Serial.println(WiFi.localIP());
+        
+        return;
+    }
+
+    if (cmd == "creds flush") {
+
+        Serial.println("===== WLAN Credentials löschen =====");
+
+        prefs.begin("wifi", false);
+        prefs.putString("ssid", "");
+        prefs.putString("pass", "");
+        prefs.end();
+
+        Serial.println("Credentials gelöscht. Neustart...");
+        delay(500);
+
+        ESP.restart();
+        return;
+    }
+
+
+
+    // --- Debug Layout ---
+    if (cmd == "debug layout") {
+        runFullTimeTest();
+        return;
+    }
+
+
+    Serial.print("Unbekannter Befehl: ");
+    Serial.println(cmd);
 }
