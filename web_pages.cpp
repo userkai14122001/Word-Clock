@@ -1,263 +1,161 @@
-#include <Arduino.h>
-#include <WiFi.h>
-#include <WebServer.h>
-#include <DNSServer.h>
-#include <Preferences.h>
-#include <ArduinoJson.h>
-
-#include "wifi_manager.h"
 #include "web_pages.h"
 
-// Globale Objekte aus WordClock.ino
-extern WebServer server;
-extern DNSServer dnsServer;
-extern Preferences prefs;
+String pageIndex() {
+    return
+        "<html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<meta http-equiv='Cache-Control' content='no-cache, no-store, must-revalidate'/>"
+        "<meta http-equiv='Pragma' content='no-cache'/>"
+        "<meta http-equiv='Expires' content='0'/>"
+        "<title>WordClock Setup</title>"
+        "<style>"
+        ".tabs{display:flex;gap:12px;margin-bottom:20px;}"
+        ".tabs a{padding:8px 14px;background:#ddd;border-radius:6px;"
+        "text-decoration:none;color:#000;font-weight:bold;}"
+        ".tabs a:hover{background:#bbb;}"
+        "label{display:block;margin-top:12px;font-weight:bold;}"
+        "input,select{width:100%;padding:8px;margin-top:4px;font-size:16px;}"
+        "</style>"
+        "</head><body>"
 
-extern bool setupMode;
-extern unsigned long setupStartTime;
+        "<div class='tabs'>"
+        "<a href='/wifi'>WIFI</a>"
+        "<a href='/mqtt'>MQTT</a>"
+        "<a href='/reboot'>REBOOT</a>"
+        "</div>"
 
-extern String wifi_ssid;
-extern String wifi_pass;
+        "<h1>WordClock Setup</h1>"
+        "<p>Bitte wählen Sie einen der oberen bereiche aus.</p>"
 
-extern String mqtt_server;
-extern String mqtt_user;
-extern String mqtt_pass;
+        "</body></html>";
+}
 
-// ---------------------------------------------------------
-// Cache für WLAN-Scan
-// ---------------------------------------------------------
-String cachedScanResult = "[]";
+String pageWifi() {
+    return
+        "<html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<meta http-equiv='Cache-Control' content='no-cache, no-store, must-revalidate'/>"
+        "<meta http-equiv='Pragma' content='no-cache'/>"
+        "<meta http-equiv='Expires' content='0'/>"
+        "<title>WLAN Setup</title>"
+        "<style>"
+        ".tabs{display:flex;gap:12px;margin-bottom:20px;}"
+        ".tabs a{padding:8px 14px;background:#ddd;border-radius:6px;"
+        "text-decoration:none;color:#000;font-weight:bold;}"
+        ".tabs a:hover{background:#bbb;}"
+        "label{display:block;margin-top:12px;font-weight:bold;}"
+        "input,select{width:100%;padding:8px;margin-top:4px;font-size:16px;}"
+        "</style>"
+        "</head><body>"
 
+        "<div class='tabs'>"
+        "<a href='/wifi'>WIFI</a>"
+        "<a href='/mqtt'>MQTT</a>"
+        "<a href='/reboot'>REBOOT</a>"
+        "</div>"
 
-// ---------------------------------------------------------
-// WLAN-Scan durchführen und Ergebnis cachen
-// ---------------------------------------------------------
-void performWifiScan() {
-    Serial.println("Initialer WLAN-Scan...");
+        "<h1>WLAN konfigurieren</h1>"
 
-    WiFi.mode(WIFI_AP_STA);
-    WiFi.disconnect();
-    delay(150);
+        "<form action='/save' method='POST'>"
 
-    int n = WiFi.scanNetworks();
-    Serial.printf("SCAN FOUND %d NETWORKS\n", n);
+        "<label>SSID</label>"
+        "<select name='ssid'><option>Bitte warten</option></select>"
 
-    DynamicJsonDocument doc(2048);
-    JsonArray arr = doc.to<JsonArray>();
+        "<label>Passwort</label>"
+        "<input id='pw' name='wifipass' type='password'>"
+        "<button type='button' onclick=\"var x=document.getElementById('pw'); x.type=(x.type==='password'?'text':'password');\">Passwort anzeigen</button>"
 
-    Serial.println("Gefundene Netzwerke");
-    for (int i = 0; i < n; i++) {
-        arr.add(WiFi.SSID(i));
-        Serial.print(WiFi.SSID(i) + ", ");
-    }
-    
-    String json;
-    serializeJson(arr, json);
-    cachedScanResult = json;
+        "<br><br><input type='submit' value='Speichern'>"
+        "</form>"
+
+        "<script>"
+        "window.addEventListener('DOMContentLoaded',()=>{"
+        " console.log('JS gestartet');"
+        " fetch('/scan').then(r=>r.json()).then(list=>{"
+        "   console.log('SCAN RESULT:', list);"
+        "   let sel=document.querySelector('select[name=ssid]');"
+        "   sel.innerHTML='';"
+        "   list.forEach(ssid=>{"
+        "     let o=document.createElement('option');"
+        "     o.textContent=ssid;"
+        "     sel.appendChild(o);"
+        "   });"
+        " }).catch(err=>console.error('SCAN ERROR:',err));"
+        "});"
+        "</script>"
+
+        "</body></html>";
 }
 
 
+String pageMqtt() {
+    return
+        "<html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<meta http-equiv='Cache-Control' content='no-cache, no-store, must-revalidate'/>"
+        "<meta http-equiv='Pragma' content='no-cache'/>"
+        "<meta http-equiv='Expires' content='0'/>"
+        "<title>MQTT Setup</title>"
+        "<style>"
+        ".tabs{display:flex;gap:12px;margin-bottom:20px;}"
+        ".tabs a{padding:8px 14px;background:#ddd;border-radius:6px;"
+        "text-decoration:none;color:#000;font-weight:bold;}"
+        ".tabs a:hover{background:#bbb;}"
+        "label{display:block;margin-top:12px;font-weight:bold;}"
+        "input{width:100%;padding:8px;margin-top:4px;font-size:16px;}"
+        "</style>"
+        "</head><body>"
 
-// ---------------------------------------------------------
-// ALLE Webserver-Routen (AP + WLAN)
-// ---------------------------------------------------------
-void setupWebRoutes() {
+        "<div class='tabs'>"
+        "<a href='/wifi'>WIFI</a>"
+        "<a href='/mqtt'>MQTT</a>"
+        "<a href='/reboot'>REBOOT</a>"
+        "</div>"
 
-    // Index
-    server.on("/", []() {
-        server.send(200, "text/html", pageIndex());
-    });
+        "<h1>MQTT konfigurieren</h1>"
 
-    // WLAN-Seite
-    server.on("/wifi", []() {
-        server.send(200, "text/html", pageWifi());
-    });
+        "<form action='/save' method='POST'>"
+        "<label>Broker IP</label><input name='mqtt_host'>"
+        "<label>User</label><input name='mqtt_user'>"
+        "<label>Passwort</label><input name='mqtt_pass' type='password'>"
+        "<br><br><input type='submit' value='Speichern'>"
+        "</form>"
 
-    // MQTT-Seite
-    server.on("/mqtt", []() {
-        server.send(200, "text/html", pageMqtt());
-    });
-
-    // Reboot-Seite
-    server.on("/reboot", []() {
-        server.send(200, "text/html", pageReboot());
-    });
-
-
-    // -----------------------------------------------------
-    // DO REBOOT
-    // -----------------------------------------------------
-    server.on("/do_reboot", HTTP_POST, []() {
-        server.send(200, "text/plain", "Rebooting...");
-        ESP.restart();
-    });
-
-    // -----------------------------------------------------
-    // WLAN-Scan (liefert gecachten Scan)
-    // -----------------------------------------------------
-    server.on("/scan", []() {
-        server.send(200, "application/json", cachedScanResult);
-    });
-
-    // Optional: Live-Scan
-    server.on("/scan_live", []() {
-        performWifiScan();
-        server.send(200, "application/json", cachedScanResult);
-    });
-
-    // -----------------------------------------------------
-    // Einstellungen speichern
-    // -----------------------------------------------------
-    server.on("/save", HTTP_POST, []() {
-        Serial.println("Save");
-
-        prefs.begin("config", false);
-
-        if (server.hasArg("ssid"))
-            prefs.putString("wifi_ssid", server.arg("ssid"));
-
-        if (server.hasArg("wifipass"))
-            prefs.putString("wifi_pass", server.arg("wifipass"));
-
-        if (server.hasArg("mqtt_host"))
-            prefs.putString("mqtt_host", server.arg("mqtt_host"));
-
-        if (server.hasArg("mqtt_user"))
-            prefs.putString("mqtt_user", server.arg("mqtt_user"));
-
-        if (server.hasArg("mqtt_pass"))
-            prefs.putString("mqtt_pass", server.arg("mqtt_pass"));
-
-        Serial.println("Wifi ssid: " + prefs.getString("wifi_ssid"));
-        Serial.println("Wifi pass: " + prefs.getString("wifi_pass"));
-        Serial.println("MQTT host: " + prefs.getString("mqtt_host"));
-        Serial.println("MQTT User: " + prefs.getString("mqtt_user"));
-        Serial.println("MQTT Pass: " + prefs.getString("mqtt_pass"));
-        prefs.end();
-
-        server.send(200, "text/html", pageReboot());
-
-    });
-
-    // -----------------------------------------------------
-    // Factory Reset
-    // -----------------------------------------------------
-    server.on("/factoryreset", []() {
-        Serial.println("Factory Reset!");
-
-        prefs.begin("config", false);
-        prefs.clear();
-        prefs.end();
-
-        server.send(200, "text/plain", "Reset OK");
-        delay(300);
-        ESP.restart();
-    });
-
-    // -----------------------------------------------------
-    // Fallback / Captive Portal
-    // -----------------------------------------------------
-    server.onNotFound([]() {
-        Serial.println("Not found: " + server.uri());
-        server.sendHeader("Location", "/", true);
-        server.send(302, "text/plain", "");
-    });
+        "</body></html>";
 }
 
+String pageReboot() {
+    return
+        "<html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<title>Reboot</title>"
+        "<style>"
+        ".tabs{display:flex;gap:12px;margin-bottom:20px;}"
+        ".tabs a{padding:8px 14px;background:#ddd;border-radius:6px;"
+        "text-decoration:none;color:#000;font-weight:bold;}"
+        ".tabs a:hover{background:#bbb;}"
+        "</style>"
+        "</head><body>"
 
+        "<div class='tabs'>"
+        "<a href='/wifi'>WIFI</a>"
+        "<a href='/mqtt'>MQTT</a>"
+        "<a href='/reboot'>REBOOT</a>"
+        "</div>"
 
-// ---------------------------------------------------------
-// Setup-Modus starten (AP + DNS + Webserver + Sofort-Scan)
-// ---------------------------------------------------------
-void startSetupMode() {
-    setupMode = true;
-    setupStartTime = millis();
+        "<h1>WordClock Neustart</h1>"
+        "<p>Hier kannst du die Uhr neu starten.</p>"
 
-    Serial.println("=== ENTERING SETUP MODE ===");
+        "<form action='/do_reboot' method='POST'>"
+        "<input type='submit' value='Jetzt neu starten'>"
+        "</form>"
 
-    WiFi.disconnect(true, true);
-    WiFi.mode(WIFI_OFF);
-    delay(80);
-
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP("WordClock-Setup", nullptr);
-
-    IPAddress apIP = WiFi.softAPIP();
-    Serial.println("AP gestartet: WordClock-Setup");
-    Serial.println("AP IP: " + apIP.toString());
-
-    dnsServer.start(53, "*", apIP);
-
-    performWifiScan();
-
-    setupWebRoutes();
-    server.begin();
-    Serial.println("Webserver im Setup-Mode gestartet");
+        "</body></html>";
 }
 
-
-
-// ---------------------------------------------------------
-// WLAN verbinden oder Setup starten
-// ---------------------------------------------------------
-void tryConnectWiFi() {
-    prefs.begin("config", true);
-    wifi_ssid   = prefs.getString("wifi_ssid", "");
-    wifi_pass   = prefs.getString("wifi_pass", "");
-    mqtt_server = prefs.getString("mqtt_host", "");
-    mqtt_user   = prefs.getString("mqtt_user", "");
-    mqtt_pass   = prefs.getString("mqtt_pass", "");
-    prefs.end();
-
-    if (wifi_ssid == "") {
-        Serial.println("Keine WLAN-Daten → Setup-Modus");
-        startSetupMode();
-        return;
-    }
-
-    Serial.println("Verbinde mit WLAN: " + wifi_ssid);
-
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(wifi_ssid.c_str(), wifi_pass.c_str());
-
-    unsigned long startAttempt = millis();
-    while (WiFi.status() != WL_CONNECTED &&
-           millis() - startAttempt < 15000) {
-        delay(300);
-    }
-
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("WLAN fehlgeschlagen → Setup-Modus");
-
-        WiFi.disconnect(true, true);
-        delay(200);
-        WiFi.mode(WIFI_OFF);
-        delay(200);
-
-        startSetupMode();
-        return;
-    }
-
-    Serial.println("WLAN verbunden: " + WiFi.localIP().toString());
-    setupMode = false;
-
-    setupWebRoutes();
-    server.begin();
-    Serial.println("Webserver im WLAN gestartet");
-}
-
-
-
-// ---------------------------------------------------------
-// Setup-Webserver laufen lassen
-// ---------------------------------------------------------
-void handleSetupWeb() {
-    if (!setupMode) return;
-
-    dnsServer.processNextRequest();
-    server.handleClient();
-
-    if (millis() - setupStartTime > 5UL * 60UL * 1000UL) {
-        ESP.restart();
-    }
+String pageSaved() {
+    return
+        "<html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<title>Gespeichert</title>"
+        "</head><body>"
+        "<h1>Einstellungen gespeichert!</h1>"
+        "<p>Die Einstellungen wurden gespeichert.</p>"
+        "<p>Ein Neustart erfolgt nur über den Reboot-Tab.</p>"
+        "</body></html>";
 }
