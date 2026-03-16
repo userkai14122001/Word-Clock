@@ -12,6 +12,9 @@ void showColorloop();
 void showColorwipe();
 void showLoveYou();
 void showTime(int hour, int minute);
-void showAttentionAnimation(uint32_t col);
+void showStartupWave(uint32_t col);
+void testTime(int hour, int minute);
+void showWifiRingAnimation(uint32_t col);
+uint32_t makeColor(uint8_t r, uint8_t g, uint8_t b);
 
 #endif
